@@ -1,0 +1,11 @@
+ 
+        /* Ajout de quelques effets d'animation pour la sidebar */
+        .sidebar-item {
+            transition: background-color 0.3s ease, transform 0.3s ease;
+        }
+
+        .sidebar-item:hover {
+            background-color: #f3f4f6;
+            transform: scale(1.05);
+        }
+     

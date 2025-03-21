@@ -1,0 +1,761 @@
+Je vois que vous travaillez sur un projet MVC de gestion d'utilisateurs avec PHP et MySQL, selon le brief du projet 3. Votre structure de dossiers est bonne, avec les séparations classiques de l'architecture MVC.
+
+Pour implémenter le système d'authentification et la gestion des utilisateurs, voici comment procéder:
+
+### 1. Configuration de la base de données
+
+D'abord, dans votre fichier `config/database.php`, établissez la connexion:
+
+```php
+<?php
+class Database {
+    private $host = "localhost";
+    private $db_name = "gestion_utilisateurs";
+    private $username = "root"; // à adapter selon votre configuration
+    private $password = ""; // à adapter selon votre configuration
+    public $conn;
+    
+    public function getConnection() {
+        $this->conn = null;
+        try {
+            $this->conn = new PDO("mysql:host=" . $this->host . ";dbname=" . $this->db_name, $this->username, $this->password);
+            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        } catch(PDOException $e) {
+            echo "Erreur de connexion: " . $e->getMessage();
+        }
+        return $this->conn;
+    }
+}
+```
+
+### 2. Modèle Utilisateur
+
+Dans votre fichier `app/Modeles/user.php`:
+
+```php
+<?php
+class User {
+    private $conn;
+    private $table_name = "users";
+    
+    // Propriétés d'utilisateur
+    public $id;
+    public $username;
+    public $email;
+    public $password;
+    public $role_id;
+    public $status;
+    public $created_at;
+    
+    public function __construct($db) {
+        $this->conn = $db;
+    }
+    
+    // Créer un nouvel utilisateur
+    public function create() {
+        $query = "INSERT INTO " . $this->table_name . " SET username=:username, email=:email, password=:password, role_id=:role_id, status=:status";
+        $stmt = $this->conn->prepare($query);
+        
+        // Sécuriser les données
+        $this->username = htmlspecialchars(strip_tags($this->username));
+        $this->email = htmlspecialchars(strip_tags($this->email));
+        $this->password = password_hash($this->password, PASSWORD_BCRYPT); // Hashage bcrypt
+        
+        // Bind des paramètres
+        $stmt->bindParam(":username", $this->username);
+        $stmt->bindParam(":email", $this->email);
+        $stmt->bindParam(":password", $this->password);
+        $stmt->bindParam(":role_id", $this->role_id);
+        $stmt->bindParam(":status", $this->status);
+        
+        // Exécution de la requête
+        if($stmt->execute()) {
+            return true;
+        }
+        return false;
+    }
+    
+    // Vérifier si un utilisateur existe avec ces identifiants
+    public function login() {
+        $query = "SELECT id, username, email, password, role_id, status FROM " . $this->table_name . " WHERE email = ? LIMIT 0,1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(1, $this->email);
+        $stmt->execute();
+        
+        if($stmt->rowCount() > 0) {
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $this->id = $row['id'];
+            $this->username = $row['username'];
+            $this->password = $row['password'];
+            $this->role_id = $row['role_id'];
+            $this->status = $row['status'];
+            
+            // Vérifier si le statut est actif
+            if($this->status == 'inactive') {
+                return false;
+            }
+            
+            return true;
+        }
+        return false;
+    }
+    
+    // Enregistrer la session de connexion
+    public function recordSession() {
+        $query = "INSERT INTO sessions SET user_id=:user_id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":user_id", $this->id);
+        return $stmt->execute();
+    }
+    
+    // Mettre à jour la session lors de la déconnexion
+    public function updateSessionLogout($session_id) {
+        $query = "UPDATE sessions SET logout_time = NOW() WHERE id = :session_id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":session_id", $session_id);
+        return $stmt->execute();
+    }
+    
+    // Lister tous les utilisateurs (pour l'admin)
+    public function readAll() {
+        $query = "SELECT u.id, u.username, u.email, u.status, u.created_at, r.name as role_name 
+                  FROM " . $this->table_name . " u 
+                  LEFT JOIN roles r ON u.role_id = r.id 
+                  ORDER BY u.created_at DESC";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return $stmt;
+    }
+    
+    // Lire un utilisateur par ID
+    public function readOne() {
+        $query = "SELECT u.id, u.username, u.email, u.status, u.created_at, r.name as role_name 
+                  FROM " . $this->table_name . " u 
+                  LEFT JOIN roles r ON u.role_id = r.id 
+                  WHERE u.id = ? LIMIT 0,1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(1, $this->id);
+        $stmt->execute();
+        
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        $this->username = $row['username'];
+        $this->email = $row['email'];
+        $this->status = $row['status'];
+        $this->created_at = $row['created_at'];
+        
+        return $stmt;
+    }
+    
+    // Mettre à jour un utilisateur
+    public function update() {
+        $query = "UPDATE " . $this->table_name . " 
+                 SET username = :username, 
+                     email = :email,
+                     status = :status,
+                     role_id = :role_id
+                 WHERE id = :id";
+        
+        $stmt = $this->conn->prepare($query);
+        
+        // Sécuriser les données
+        $this->username = htmlspecialchars(strip_tags($this->username));
+        $this->email = htmlspecialchars(strip_tags($this->email));
+        $this->status = htmlspecialchars(strip_tags($this->status));
+        
+        // Bind des paramètres
+        $stmt->bindParam(':username', $this->username);
+        $stmt->bindParam(':email', $this->email);
+        $stmt->bindParam(':status', $this->status);
+        $stmt->bindParam(':role_id', $this->role_id);
+        $stmt->bindParam(':id', $this->id);
+        
+        // Exécution de la requête
+        if($stmt->execute()) {
+            return true;
+        }
+        return false;
+    }
+    
+    // Supprimer un utilisateur
+    public function delete() {
+        $query = "DELETE FROM " . $this->table_name . " WHERE id = ?";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(1, $this->id);
+        
+        if($stmt->execute()) {
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+### 3. Contrôleurs
+
+#### `app/Controllers/AuthController.php`
+
+```php
+<?php
+require_once 'app/Modeles/user.php';
+require_once 'config/database.php';
+
+class AuthController {
+    private $db;
+    private $user;
+    
+    public function __construct() {
+        $database = new Database();
+        $this->db = $database->getConnection();
+        $this->user = new User($this->db);
+    }
+    
+    public function showRegisterForm() {
+        include 'app/Views/register.php';
+    }
+    
+    public function register() {
+        if($_SERVER['REQUEST_METHOD'] === 'POST') {
+            // Validation des données
+            if(empty($_POST['username']) || empty($_POST['email']) || empty($_POST['password'])) {
+                $error = "Tous les champs sont requis";
+                include 'app/Views/register.php';
+                return;
+            }
+            
+            if(!filter_var($_POST['email'], FILTER_VALIDATE_EMAIL)) {
+                $error = "Format d'email invalide";
+                include 'app/Views/register.php';
+                return;
+            }
+            
+            if(strlen($_POST['password']) < 6) {
+                $error = "Le mot de passe doit contenir au moins 6 caractères";
+                include 'app/Views/register.php';
+                return;
+            }
+            
+            // Assignation des valeurs
+            $this->user->username = $_POST['username'];
+            $this->user->email = $_POST['email'];
+            $this->user->password = $_POST['password'];
+            $this->user->role_id = 2; // Par défaut, rôle client
+            $this->user->status = 'active';
+            
+            // Création de l'utilisateur
+            if($this->user->create()) {
+                // Redirection vers la page de connexion
+                header('Location: index.php?action=login&success=1');
+                exit();
+            } else {
+                $error = "Une erreur est survenue lors de l'inscription";
+                include 'app/Views/register.php';
+            }
+        }
+    }
+    
+    public function showLoginForm() {
+        include 'app/Views/login.php';
+    }
+    
+    public function login() {
+        if($_SERVER['REQUEST_METHOD'] === 'POST') {
+            // Validation des données
+            if(empty($_POST['email']) || empty($_POST['password'])) {
+                $error = "Tous les champs sont requis";
+                include 'app/Views/login.php';
+                return;
+            }
+            
+            // Vérifier l'existence de l'utilisateur
+            $this->user->email = $_POST['email'];
+            if($this->user->login()) {
+                // Vérifier le mot de passe
+                if(password_verify($_POST['password'], $this->user->password)) {
+                    // Démarrer la session
+                    session_start();
+                    $_SESSION['user_id'] = $this->user->id;
+                    $_SESSION['username'] = $this->user->username;
+                    $_SESSION['role_id'] = $this->user->role_id;
+                    
+                    // Enregistrer la session
+                    $session_id = $this->user->recordSession();
+                    $_SESSION['session_id'] = $session_id;
+                    
+                    // Redirection selon le rôle
+                    if($this->user->role_id == 1) { // Admin
+                        header('Location: index.php?action=adminDashboard');
+                    } else { // Clien  t
+                        header('Location: index.php?action=userDashboard');
+                    }
+                    exit();
+                } else {
+                    $error = "Mot de passe incorrect";
+                    include 'app/Views/login.php';
+                }
+            } else {
+                $error = "Email inconnu ou compte inactif";
+                include 'app/Views/login.php';
+            }
+        }
+    }
+    
+    public function logout() {
+        session_start();
+        
+        // Mettre à jour la session de connexion
+        if(isset($_SESSION['session_id'])) {
+            $this->user->updateSessionLogout($_SESSION['session_id']);
+        }
+        
+        // Détruire la session
+        session_destroy();
+        
+        // Redirection vers la page de connexion
+        header('Location: index.php?action=login');
+        exit();
+    }
+}
+```
+
+#### `app/Controllers/UserController.php`
+
+```php
+<?php
+require_once 'app/Modeles/user.php';
+require_once 'config/database.php';
+
+class UserController {
+    private $db;
+    private $user;
+    
+    public function __construct() {
+        $database = new Database();
+        $this->db = $database->getConnection();
+        $this->user = new User($this->db);
+    }
+    
+    // Tableau de bord admin
+    public function adminDashboard() {
+        // Vérifier si l'utilisateur est connecté et est admin
+        session_start();
+        if(!isset($_SESSION['user_id']) || $_SESSION['role_id'] != 1) {
+            header('Location: index.php?action=login');
+            exit();
+        }
+        
+        // Récupérer tous les utilisateurs
+        $stmt = $this->user->readAll();
+        $users = [];
+        
+        while($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            array_push($users, $row);
+        }
+        
+        include 'app/Views/admin_dashboard.php';
+    }
+    
+    // Tableau de bord utilisateur
+    public function userDashboard() {
+        // Vérifier si l'utilisateur est connecté
+        session_start();
+        if(!isset($_SESSION['user_id'])) {
+            header('Location: index.php?action=login');
+            exit();
+        }
+        
+        // Récupérer les informations de l'utilisateur
+        $this->user->id = $_SESSION['user_id'];
+        $this->user->readOne();
+        
+        include 'app/Views/user_dashboard.php';
+    }
+    
+    // Afficher le formulaire d'édition d'un utilisateur
+    public function editUser($id) {
+        // Vérifier si l'utilisateur est connecté et est admin ou l'utilisateur lui-même
+        session_start();
+        if(!isset($_SESSION['user_id']) || ($_SESSION['role_id'] != 1 && $_SESSION['user_id'] != $id)) {
+            header('Location: index.php?action=login');
+            exit();
+        }
+        
+        // Récupérer les informations de l'utilisateur
+        $this->user->id = $id;
+        $this->user->readOne();
+        
+        include 'app/Views/edit_user.php';
+    }
+    
+    // Mettre à jour un utilisateur
+    public function updateUser() {
+        if($_SERVER['REQUEST_METHOD'] === 'POST') {
+            // Vérifier si l'utilisateur est connecté et est admin ou l'utilisateur lui-même
+            session_start();
+            if(!isset($_SESSION['user_id']) || ($_SESSION['role_id'] != 1 && $_SESSION['user_id'] != $_POST['id'])) {
+                header('Location: index.php?action=login');
+                exit();
+            }
+            
+            // Validation des données
+            if(empty($_POST['username']) || empty($_POST['email'])) {
+                $error = "Le nom d'utilisateur et l'email sont requis";
+                include 'app/Views/edit_user.php';
+                return;
+            }
+            
+            // Assignation des valeurs
+            $this->user->id = $_POST['id'];
+            $this->user->username = $_POST['username'];
+            $this->user->email = $_POST['email'];
+            
+            // L'administrateur peut modifier le statut et le rôle
+            if($_SESSION['role_id'] == 1) {
+                $this->user->status = $_POST['status'];
+                $this->user->role_id = $_POST['role_id'];
+            } else {
+                // Récupérer les valeurs actuelles
+                $this->user->readOne();
+            }
+            
+            // Mise à jour de l'utilisateur
+            if($this->user->update()) {
+                // Redirection selon le rôle
+                if($_SESSION['role_id'] == 1) {
+                    header('Location: index.php?action=adminDashboard&success=1');
+                } else {
+                    header('Location: index.php?action=userDashboard&success=1');
+                }
+                exit();
+            } else {
+                $error = "Une erreur est survenue lors de la mise à jour";
+                include 'app/Views/edit_user.php';
+            }
+        }
+    }
+    
+    // Supprimer un utilisateur
+    public function deleteUser($id) {
+        // Vérifier si l'utilisateur est connecté et est admin
+        session_start();
+        if(!isset($_SESSION['user_id']) || $_SESSION['role_id'] != 1) {
+            header('Location: index.php?action=login');
+            exit();
+        }
+        
+        // Supprimer l'utilisateur
+        $this->user->id = $id;
+        if($this->user->delete()) {
+            header('Location: index.php?action=adminDashboard&success=2');
+        } else {
+            header('Location: index.php?action=adminDashboard&error=1');
+        }
+        exit();
+    }
+}
+```
+
+### 4. Router
+
+Dans votre fichier `routes/routes.php`:
+
+```php
+<?php
+// Inclure les contrôleurs
+require_once 'app/Controllers/AuthController.php';
+require_once 'app/Controllers/UserController.php';
+
+// Initialiser les contrôleurs
+$authController = new AuthController();
+$userController = new UserController();
+
+// Router simple
+$action = isset($_GET['action']) ? $_GET['action'] : 'login';
+
+switch($action) {
+    // Routes d'authentification
+    case 'register':
+        $authController->showRegisterForm();
+        break;
+    case 'register_process':
+        $authController->register();
+        break;
+    case 'login':
+        $authController->showLoginForm();
+        break;
+    case 'login_process':
+        $authController->login();
+        break;
+    case 'logout':
+        $authController->logout();
+        break;
+    
+    // Routes d'administration
+    case 'adminDashboard':
+        $userController->adminDashboard();
+        break;
+    case 'userDashboard':
+        $userController->userDashboard();
+        break;
+    case 'editUser':
+        $id = isset($_GET['id']) ? $_GET['id'] : null;
+        $userController->editUser($id);
+        break;
+    case 'updateUser':
+        $userController->updateUser();
+        break;
+    case 'deleteUser':
+        $id = isset($_GET['id']) ? $_GET['id'] : null;
+        $userController->deleteUser($id);
+        break;
+    
+    // Route par défaut
+    default:
+        $authController->showLoginForm();
+        break;
+}
+```
+
+### 5. Point d'entrée
+
+Dans `public/index.php`:
+
+```php
+<?php
+// Point d'entrée de l'application
+require_once '../routes/routes.php';
+```
+
+### 6. Vues
+
+Maintenant, créez les différentes vues. Voici quelques exemples:
+
+#### `app/Views/login.php`
+
+```php
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Connexion</h1>
+        
+        <?php if(isset($_GET['success']) && $_GET['success'] == 1): ?>
+            <div class="alert alert-success">
+                Inscription réussie ! Vous pouvez maintenant vous connecter.
+            </div>
+        <?php endif; ?>
+        
+        <?php if(isset($error)): ?>
+            <div class="alert alert-danger">
+                <?php echo $error; ?>
+            </div>
+        <?php endif; ?>
+        
+        <form action="index.php?action=login_process" method="post">
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Mot de passe:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Se connecter</button>
+        </form>
+        
+        <p>Pas encore inscrit ? <a href="index.php?action=register">Créer un compte</a></p>
+    </div>
+</body>
+</html>
+```
+
+#### `app/Views/register.php`
+
+```php
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inscription</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Inscription</h1>
+        
+        <?php if(isset($error)): ?>
+            <div class="alert alert-danger">
+                <?php echo $error; ?>
+            </div>
+        <?php endif; ?>
+        
+        <form action="index.php?action=register_process" method="post">
+            <div class="form-group">
+                <label for="username">Nom d'utilisateur:</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Mot de passe:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">S'inscrire</button>
+        </form>
+        
+        <p>Déjà inscrit ? <a href="index.php?action=login">Se connecter</a></p>
+    </div>
+</body>
+</html>
+```
+
+#### `app/Views/admin_dashboard.php` et `app/Views/user_dashboard.php`
+
+Ces vues devront être adaptées selon vos besoins spécifiques, mais contiendront la logique de présentation pour les tableaux de bord d'administration et d'utilisateur.
+
+### Étapes suivantes
+
+1. Créez les scripts SQL pour initialiser votre base de données selon le schéma fourni.
+2. Implémentez les vues manquantes pour le tableau de bord administrateur et utilisateur.
+3. Ajoutez des fonctionnalités de sécurité supplémentaires (protection CSRF, validation plus poussée des entrées).
+4. Testez votre application avec différents scénarios.
+
+Cette implémentation fournit une base solide pour votre système d'authentification et de gestion des utilisateurs selon l'architecture MVC. N'hésitez pas à l'adapter selon vos besoins spécifiques.
+
+
+
+Pour gérer l'ajout, la modification et la visualisation du pourcentage d'informations remplies dans la barre latérale de votre tableau de bord utilisateur, vous pouvez suivre les étapes suivantes :
+
+### 1. Ajouter une fonction pour calculer le pourcentage d'informations remplies dans votre modèle `User.php`
+
+Nous allons ajouter une méthode pour calculer le pourcentage d'informations remplies dans le profil de l'utilisateur. Par exemple, vous pouvez vérifier si les champs suivants sont remplis :
+- `username`
+- `email`
+- `phone`
+- etc.
+
+Voici une méthode qui calcule ce pourcentage :
+
+#### Méthode pour calculer le pourcentage d'informations remplies :
+
+```php
+public function getProfileCompletionPercentage() {
+    $fields = [
+        'username' => $this->username,
+        'email' => $this->email,
+        'phone' => $this->phone, // Si vous avez ce champ dans la base de données
+        // Ajoutez d'autres champs importants que vous souhaitez vérifier
+    ];
+
+    $filled = 0;
+    $total = count($fields);
+
+    foreach ($fields as $key => $value) {
+        if (!empty($value)) {
+            $filled++;
+        }
+    }
+
+    return ($filled / $total) * 100;
+}
+```
+
+### 2. Mettre à jour la base de données
+
+Assurez-vous que les informations du profil de l'utilisateur sont stockées correctement dans votre base de données, et qu'elles sont accessibles à partir de l'objet `User`. Si vous n'avez pas encore de champ `phone` ou d'autres informations, vous pouvez les ajouter dans votre table `users` avec une migration SQL.
+
+### 3. Afficher le pourcentage dans la sidebar
+
+Une fois que vous avez la méthode pour calculer le pourcentage de profil rempli, vous pouvez l'afficher dans la sidebar. Dans votre fichier `UserDashboard.php`, vous pouvez ajouter une section pour afficher cette information.
+
+#### Code à ajouter dans `UserDashboard.php` :
+
+```php
+<?php
+// Calcul du pourcentage de complétion du profil
+$profileCompletionPercentage = $user->getProfileCompletionPercentage();
+?>
+
+<aside class="w-64 bg-white shadow-md h-screen fixed left-0 top-14 p-6 transition-transform duration-300 hover:scale-105">
+    <h2 class="text-2xl font-bold text-gray-700 mb-6">Menu</h2>
+    <nav class="mt-6 space-y-2">
+        <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-md transition">Mon Profil</a>
+        <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-md transition">Activité Récente</a>
+        <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-md transition">Paramètres</a>
+    </nav>
+
+    <!-- Affichage du pourcentage de complétion du profil -->
+    <div class="mt-8 bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-lg font-semibold text-gray-700">Complétion du Profil</h3>
+        <div class="relative pt-1">
+            <div class="flex mb-2 items-center justify-between">
+                <span class="text-sm font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
+                    <?php echo round($profileCompletionPercentage) . "%"; ?>
+                </span>
+            </div>
+            <div class="flex mb-2">
+                <div class="w-full bg-gray-200 rounded-full">
+                    <div class="bg-blue-600 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-full" style="width: <?php echo round($profileCompletionPercentage); ?>%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</aside>
+```
+
+### 4. Modifier le modèle pour gérer l'édition du profil
+
+Pour permettre aux utilisateurs de mettre à jour leurs informations (par exemple, `username`, `email`, etc.), vous devrez ajouter une vue et une méthode dans votre contrôleur pour gérer l'édition du profil.
+
+#### Exemple pour gérer l'édition du profil :
+
+1. **Afficher le formulaire d'édition dans `edit_profile.php` :**
+
+   Dans `edit_profile.php`, vous pouvez afficher un formulaire permettant à l'utilisateur de modifier ses informations.
+
+2. **Méthode pour enregistrer les modifications dans `UserController.php` :**
+
+   Vous pouvez créer une méthode pour sauvegarder les informations modifiées :
+
+```php
+public function updateProfile($id, $username, $email, $phone) {
+    // Mettre à jour l'utilisateur dans la base de données
+    $query = "UPDATE " . $this->table_name . " SET username = :username, email = :email, phone = :phone WHERE id = :id";
+    $stmt = $this->conn->prepare($query);
+    
+    // Sécuriser les données
+    $this->username = htmlspecialchars(strip_tags($username));
+    $this->email = htmlspecialchars(strip_tags($email));
+    $this->phone = htmlspecialchars(strip_tags($phone));
+
+    // Bind des paramètres
+    $stmt->bindParam(":id", $id);
+    $stmt->bindParam(":username", $this->username);
+    $stmt->bindParam(":email", $this->email);
+    $stmt->bindParam(":phone", $this->phone);
+
+    return $stmt->execute();
+}
+```
+
+### 5. Ajouter une vérification et mise à jour du profil dans la sidebar
+
+Une fois que l'utilisateur a mis à jour ses informations, vous pouvez recalculer et mettre à jour le pourcentage dans la sidebar.
+
+---
+
+Avec ces changements, vous aurez un système pour gérer l'ajout, la modification et la visualisation du profil utilisateur avec un indicateur de complétion dans la sidebar de votre tableau de bord utilisateur.
