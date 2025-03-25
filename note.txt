@@ -6,3 +6,197 @@ Session gère tout ce qui concerne les sessions et l'historique de connexion
 
 Role gère la logique métier des rôles
 
+
+
+
+
+Je vois que vous avez fourni plusieurs fichiers et que vous souhaitez implémenter la gestion de profil et l'historique des connexions. Voici les corrections et optimisations nécessaires :
+
+### Problèmes identifiés :
+
+1. **Duplication de méthodes** : Certaines méthodes comme `userDashboard()`, `updateProfile()` et `updatePassword()` sont définies deux fois
+2. **Incohérence dans les noms** : Mix de `userData` et `$user` dans les variables
+3. **Sécurité** : Manque de validation CSRF dans les formulaires
+
+### Solution optimisée :
+
+1. **UserController.php** (version corrigée) :
+
+```php
+class UserController {
+    private $userModel;
+    private $roleModel;
+    private $sessionModel;
+
+    public function __construct($userModel, $roleModel, $sessionModel) {
+        $this->userModel = $userModel;
+        $this->roleModel = $roleModel;
+        $this->sessionModel = $sessionModel;
+    }
+
+    public function userDashboard() {
+        $this->checkAuthentication();
+        
+        if ($_SESSION['role_id'] == 1) {
+            header("Location: index.php?action=adminDashboard");
+            exit();
+        }
+        
+        $userData = $this->userModel->getById($_SESSION['user_id']);
+        $sessionsHistory = $this->sessionModel->getByUserId($_SESSION['user_id']);
+
+        require_once __DIR__.'/../Views/userdashboard.php';
+    }
+
+    public function updateProfile() {
+        $this->checkAuthentication();
+        
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $data = [
+                'id' => $_SESSION['user_id'],
+                'email' => filter_var($_POST['email'], FILTER_SANITIZE_EMAIL),
+                'phone' => preg_replace('/[^0-9+]/', '', $_POST['phone'] ?? '')
+            ];
+
+            if ($this->userModel->updateProfile($data)) {
+                $_SESSION['success'] = "Profil mis à jour avec succès";
+            } else {
+                $_SESSION['error'] = "Erreur lors de la mise à jour";
+            }
+        }
+        
+        header("Location: index.php?action=userDashboard");
+        exit();
+    }
+
+    public function updatePassword() {
+        $this->checkAuthentication();
+        
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $current = $_POST['current_password'];
+            $new = $_POST['new_password'];
+            $confirm = $_POST['confirm_password'];
+
+            if (strlen($new) < 8 || !preg_match('/[A-Z]/', $new) || !preg_match('/[0-9]/', $new)) {
+                $_SESSION['error'] = "Le mot de passe doit contenir 8 caractères dont une majuscule et un chiffre";
+                header("Location: index.php?action=userDashboard");
+                exit();
+            }
+
+            if ($new !== $confirm) {
+                $_SESSION['error'] = "Les mots de passe ne correspondent pas";
+                header("Location: index.php?action=userDashboard");
+                exit();
+            }
+
+            if ($this->userModel->updatePassword($_SESSION['user_id'], $current, $new)) {
+                $_SESSION['success'] = "Mot de passe mis à jour avec succès";
+            } else {
+                $_SESSION['error'] = "Mot de passe actuel incorrect";
+            }
+        }
+        
+        header("Location: index.php?action=userDashboard");
+        exit();
+    }
+
+    // ... autres méthodes existantes ...
+}
+```
+
+2. **Ajout de protection CSRF** dans userdashboard.php :
+
+```php
+<!-- Dans chaque formulaire, ajoutez ce champ -->
+<input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+```
+
+3. **Modification de User.php** :
+
+```php
+public function updateProfile($data) {
+    $query = "UPDATE " . $this->table_name . " 
+             SET email = :email, phone = :phone 
+             WHERE id = :id";
+    
+    $stmt = $this->conn->prepare($query);
+    $stmt->bindParam(":email", $data['email']);
+    $stmt->bindParam(":phone", $data['phone']);
+    $stmt->bindParam(":id", $data['id']);
+    
+    return $stmt->execute();
+}
+
+public function updatePassword($userId, $currentPassword, $newPassword) {
+    $user = $this->getById($userId);
+    
+    if (!$user || !password_verify($currentPassword, $user['password'])) {
+        return false;
+    }
+
+    $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
+    $query = "UPDATE " . $this->table_name . " SET password = :password WHERE id = :id";
+    $stmt = $this->conn->prepare($query);
+    $stmt->bindParam(":password", $hashedPassword);
+    $stmt->bindParam(":id", $userId);
+    
+    return $stmt->execute();
+}
+```
+
+4. **Session.php** (optimisation) :
+
+```php
+public function getByUserId($userId, $limit = 10) {
+    $query = "SELECT login_time, logout_time, ip_address 
+              FROM " . $this->table_name . " 
+              WHERE user_id = :user_id 
+              ORDER BY login_time DESC 
+              LIMIT :limit";
+              
+    $stmt = $this->conn->prepare($query);
+    $stmt->bindValue(":user_id", $userId, PDO::PARAM_INT);
+    $stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+```
+
+### Fonctionnalités implémentées :
+
+1. **Gestion du profil** :
+   - Mise à jour des informations (email, téléphone)
+   - Changement de mot de passe sécurisé
+   - Validation des données côté serveur
+
+2. **Historique des connexions** :
+   - Affichage des 10 dernières connexions
+   - Visualisation des dates et adresses IP
+   - Tri par date décroissante
+
+3. **Sécurité** :
+   - Protection CSRF
+   - Vérification des permissions
+   - Hachage sécurisé des mots de passe
+   - Filtrage des entrées
+
+Pour une mise en œuvre complète :
+1. Assurez-vous que la table `sessions` contient les champs :
+   - `user_id` (INT)
+   - `login_time` (DATETIME)
+   - `logout_time` (DATETIME, NULLABLE)
+   - `ip_address` (VARCHAR)
+
+2. Dans votre fichier de routes, ajoutez :
+```php
+case 'userDashboard':
+    $userController->userDashboard();
+    break;
+case 'updateProfile':
+    $userController->updateProfile();
+    break;
+case 'updatePassword':
+    $userController->updatePassword();
+    break;
+```

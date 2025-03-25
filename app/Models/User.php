@@ -24,14 +24,11 @@ class User {
         if ($stmt->rowCount() > 0) {
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            // Vérifier le statut du compte
             if ($row['status'] == 'inactive') {
                 return "inactive";
             }
     
-            // Vérifier le mot de passe
             if (password_verify($password, $row['password'])) {
-                // Hydrater les propriétés de l'utilisateur
                 $this->id = $row['id'];
                 $this->username = $row['username'];
                 $this->role_id = $row['role_id'];
@@ -84,8 +81,6 @@ class User {
         return false;
     }
 
-   
-
     public function getById($id) {
         $query = "SELECT * FROM " . $this->table_name . " WHERE id = :id LIMIT 1";
         $stmt = $this->conn->prepare($query);
@@ -110,13 +105,80 @@ class User {
         return $stmt->execute();
     }
 
-    public function updatePassword($new_password) {
-        $query = "UPDATE " . $this->table_name . " SET password = :password WHERE id = :id";
+    public function updateProfile($data) {
+        $query = "UPDATE " . $this->table_name . " 
+                 SET username = :username, email = :email, phone = :phone 
+                 WHERE id = :id";
         $stmt = $this->conn->prepare($query);
-        $hashed_password = password_hash($new_password, PASSWORD_BCRYPT);
-        $stmt->bindParam(":password", $hashed_password);
-        $stmt->bindParam(":id", $this->id);
+        
+        $stmt->bindParam(':username', $data['username']);
+        $stmt->bindParam(':email', $data['email']);
+        $stmt->bindParam(':phone', $data['phone']);
+        $stmt->bindParam(':id', $data['id']);
+        
         return $stmt->execute();
     }
+
+    public function updatePassword($userId, $currentPassword, $newPassword) {
+        $user = $this->getById($userId);
+        if (!password_verify($currentPassword, $user['password'])) {
+            return false;
+        }
+
+        $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
+        $query = "UPDATE " . $this->table_name . " SET password = :password WHERE id = :id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':password', $hashedPassword);
+        $stmt->bindParam(':id', $userId);
+        
+        return $stmt->execute();
+    }
+    public function getByEmail($email) {
+        $query = "SELECT * FROM ".$this->table_name." WHERE email = ? LIMIT 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([$email]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function getAllWithRoles($limit = null, $offset = null) {
+        $query = "SELECT u.*, r.name as role_name 
+                  FROM " . $this->table_name . " u 
+                  JOIN roles r ON u.role_id = r.id
+                  ORDER BY u.created_at DESC";
+        
+        if ($limit !== null) {
+            $query .= " LIMIT :limit";
+        }
+        if ($offset !== null) {
+            $query .= " OFFSET :offset";
+        }
+        
+        $stmt = $this->conn->prepare($query);
+        
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+        }
+        if ($offset !== null) {
+            $stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+        }
+        
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
+    public function countAll() {
+        $query = "SELECT COUNT(*) as total FROM " . $this->table_name;
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row['total'];
+    }
+    public function delete($id) {
+        $query = "DELETE FROM " . $this->table_name . " WHERE id = :id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':id', $id);
+        return $stmt->execute();
+    }
+
 }
 ?>

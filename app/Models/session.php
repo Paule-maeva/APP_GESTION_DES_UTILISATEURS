@@ -4,60 +4,59 @@ class Session {
     private $table_name = "sessions";
 
     public function __construct($db) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
         $this->conn = $db;
     }
-    public function create($user_id, $ip_address) {
+
+    // Enregistre une nouvelle session de connexion
+    public function create($user_id, $ip_address, $user_agent) {
         $query = "INSERT INTO " . $this->table_name . " 
-                 (user_id, ip_address, login_time) 
-                 VALUES (:user_id, :ip_address, NOW())";
+                 (user_id, ip_address, user_agent) 
+                 VALUES (:user_id, :ip_address, :user_agent)";
         
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":user_id", $user_id);
         $stmt->bindParam(":ip_address", $ip_address);
+        $stmt->bindParam(":user_agent", $user_agent);
+        
         return $stmt->execute();
     }
 
-    public function getLoginHistory($user_id, $limit = 10) {
+    // Récupère les sessions par utilisateur
+    public function getByUserId($user_id, $limit = null) {
         $query = "SELECT * FROM " . $this->table_name . " 
                  WHERE user_id = :user_id 
-                 ORDER BY login_time DESC 
-                 LIMIT " . (int)$limit;
+                 ORDER BY login_time DESC";
+        
+        if ($limit !== null) {
+            $query .= " LIMIT :limit";
+        }
         
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":user_id", $user_id);
+        
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+        }
+        
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function startUserSession($user_data) {
-        $_SESSION['user'] = [
-            'id' => $user_data['id'],
-            'username' => $user_data['username'],
-            'email' => $user_data['email'],
-            'role_id' => $user_data['role_id']
-        ];
-    }
-
-    public function destroy() {
-        session_destroy();
-    }
-
-    public function isAuthenticated() {
-        return isset($_SESSION['user']);
-    }
-
-    public function isAdmin() {
-        return $this->isAuthenticated() && $_SESSION['user']['role_id'] == 1;
-    }
-    public function getByUserId($userId) {
-        $query = "SELECT * FROM sessions WHERE user_id = :user_id ORDER BY login_time DESC";
+    // Récupère les connexions récentes (pour le tableau de bord admin)
+    public function getRecentLogins($limit = 5) {
+        $query = "SELECT s.*, u.username 
+                 FROM " . $this->table_name . " s
+                 JOIN users u ON s.user_id = u.id
+                 ORDER BY s.login_time DESC 
+                 LIMIT :limit";
+        
         $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(":user_id", $userId);
+        $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
         $stmt->execute();
+        
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    // Autres méthodes utiles...
 }
 ?>

@@ -85,62 +85,66 @@ class AuthController {
 
     public function login() {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            // Récupérer et nettoyer les données du formulaire
             $email = trim($_POST['email']);
             $password = $_POST['password'];
-
-            // Validation des données
-            if (empty($email) || empty($password)) {
-                $_SESSION['error'] = "Tous les champs sont requis";
+    
+            // Debug complet
+            error_log("Tentative de connexion avec: ".$email);
+            
+            $user = $this->user->getByEmail($email); // Ajoutez cette méthode à User.php
+            if (!$user) {
+                error_log("Utilisateur non trouvé");
+                $_SESSION['error'] = "Identifiants incorrects";
                 header("Location: index.php?action=login");
                 exit();
             }
-
-            // Tenter de connecter l'utilisateur
-            $loginResult = $this->user->login($email, $password);
-
-            if ($loginResult == "success") {
-                // Stocker les informations de l'utilisateur dans la session
-                $_SESSION['user_id'] = $this->user->id;
-                $_SESSION['username'] = $this->user->username;
-                $_SESSION['role_id'] = $this->user->role_id;
-                
-                // Rediriger en fonction du rôle
-                if ($_SESSION['role_id'] == 1) { // Admin
-                    header("Location: index.php?action=adminDashboard");
-                } else { // Utilisateur normal
-                    header("Location: index.php?action=userDashboard");
-                }
+    
+            error_log("Données utilisateur trouvées: ".print_r($user, true));
+            error_log("Comparaison mot de passe: ".password_verify($password, $user['password']) ? 'OK' : 'NOK');
+    
+            if ($user['status'] != 'active') {
+                $_SESSION['error'] = "Compte désactivé";
+                header("Location: index.php?action=login");
                 exit();
-            } elseif ($loginResult == "inactive") {
-                $_SESSION['error'] = "Compte inactif. Contactez l'administration.";
-            } elseif ($loginResult == "incorrect_password") {
-                $_SESSION['error'] = "Mot de passe incorrect";
-            } else {
-                $_SESSION['error'] = "Utilisateur non trouvé";
             }
-
+    
+            if (password_verify($password, $user['password'])) {
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['username'] = $user['username'];
+                $_SESSION['role_id'] = $user['role_id'];
+                
+                error_log("Connexion réussie, redirection vers dashboard");
+                header("Location: index.php?action=".($user['role_id'] == 1 ? 'adminDashboard' : 'userDashboard'));
+                exit();
+            }
+    
+            $_SESSION['error'] = "Mot de passe incorrect";
             header("Location: index.php?action=login");
             exit();
         }
     }
 
+    //gestion connexion en tant que admin
     public function createAdminIfNotExists() {
-        $adminEmail = 'admin@example.com';
+        $adminEmail = 'admin@gmail.com';
         
+        // Vérifier existence par email seulement
         if (!$this->user->emailExists($adminEmail)) {
-            $this->user->username = 'admin';
-            $this->user->email = $adminEmail;
-            $this->user->password = password_hash('admin123', PASSWORD_BCRYPT);
-            $this->user->role_id = 1;
-            $this->user->status = 'active';
-            
-            if ($this->user->create()) {
-                error_log("Admin user created");
+            try {
+                // D'abord supprimer tout admin existant avec le même username
+                $this->db->query("DELETE FROM users WHERE username = 'admin'");
+                
+                // Puis créer le nouvel admin
+                $hash = password_hash('admin123', PASSWORD_BCRYPT);
+                $stmt = $this->db->prepare("INSERT INTO users 
+                                         (username, email, password, role_id, status) 
+                                         VALUES (?, ?, ?, 1, 'active')");
+                $stmt->execute(['admin', $adminEmail, $hash]);
+            } catch (PDOException $e) {
+                error_log("Admin existe déjà ou autre erreur: ".$e->getMessage());
             }
         }
     }
-
     public function logout() {
         // Détruire la session
         session_unset();
