@@ -15,11 +15,16 @@ class AuthController {
         $database = new Database();
         $this->db = $database->getConnection();
         $this->user = new User($this->db);
+        $this->createAdminIfNotExists();
     }
 
-    public function showRegisterForm() {
-        require '../app/Views/register.php';
+    
+    
+    public function showRegister() {
+        require_once __DIR__.'/../Views/register.php'; // Chemin direct
     }
+    
+     
 
     public function register() {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -56,7 +61,8 @@ class AuthController {
             // Préparer les données pour l'insertion
             $this->user->username = $username;
             $this->user->email = $email;
-            $this->user->password = $password;
+            // Dans AuthController->register()
+            $this->user->password = password_hash($password, PASSWORD_BCRYPT);
             $this->user->role_id = 2; // Role utilisateur par défaut
             $this->user->status = 'active';
 
@@ -73,8 +79,8 @@ class AuthController {
         }
     }
 
-    public function showLoginForm() {
-        require '../app/Views/login.php';
+    public function showLogin() {
+         require_once __DIR__.'/../Views/login.php'; 
     }
 
     public function login() {
@@ -116,6 +122,22 @@ class AuthController {
 
             header("Location: index.php?action=login");
             exit();
+        }
+    }
+
+    public function createAdminIfNotExists() {
+        $adminEmail = 'admin@example.com';
+        
+        if (!$this->user->emailExists($adminEmail)) {
+            $this->user->username = 'admin';
+            $this->user->email = $adminEmail;
+            $this->user->password = password_hash('admin123', PASSWORD_BCRYPT);
+            $this->user->role_id = 1;
+            $this->user->status = 'active';
+            
+            if ($this->user->create()) {
+                error_log("Admin user created");
+            }
         }
     }
 

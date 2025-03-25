@@ -1,48 +1,115 @@
 <?php
-// Inclure le contrôleur d'authentification
-include_once '../app/Controllers/AuthController.php';
+session_start();
 
-// Instancier le contrôleur
-$authController = new AuthController();
+// Initialisation de la base de données
+require_once __DIR__.'/../config/database.php';
+$database = new Database();
+$db = $database->getConnection();
 
-// Obtenir l'action demandée depuis l'URL, avec 'login' comme valeur par défaut
-$action = isset($_GET['action']) ? $_GET['action'] : 'login';
+// Initialisation des modèles
+require_once __DIR__.'/../app/Models/User.php';
+require_once __DIR__.'/../app/Models/Session.php';
+require_once __DIR__.'/../app/Models/Role.php';
 
-// Router vers la méthode appropriée en fonction de l'action
-switch($action) {
-    case 'register':
-        $authController->showRegisterForm();
+$userModel = new User($db);
+$sessionModel = new Session($db);
+$roleModel = new Role($db);
+
+// Initialisation des contrôleurs
+require_once __DIR__.'/../app/Controllers/AuthController.php';
+require_once __DIR__.'/../app/Controllers/UserController.php';
+require_once __DIR__.'/../app/Controllers/HomeController.php';
+
+$authController = new AuthController($userModel, $sessionModel);
+$userController = new UserController($userModel, $roleModel, $sessionModel);
+$homeController = new HomeController($sessionModel);
+
+// Récupération de l'action
+$action = $_GET['action'] ?? 'home';
+
+// Router
+switch ($action) {
+    // Pages publiques
+    case 'home':
+        $homeController->index();
         break;
-    case 'register_process':
-        $authController->register();
-        break;
+        
     case 'login':
-        $authController->showLoginForm();
+        $authController->showLogin();
         break;
+    
     case 'login_process':
-        $authController->login();  
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $authController->login();
+        } else {
+            header("Location: index.php?action=login");
+            exit();
+        }
         break;
+        
+    case 'register':
+        $authController->showRegister();
+        break;
+    
+    case 'register_process':
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $authController->register();
+        } else {
+            header("Location: index.php?action=register");
+            exit();
+        }
+        break;
+        
     case 'logout':
         $authController->logout();
         break;
-    case 'userDashboard':
-        if(!isset($_SESSION['user_id'])) {
-            header("Location: index.php?action=login");
-            exit();
-        }
-        include '../app/Views/UserDashboard.php';
-        break;
-    case 'adminDashboard':
-        if(!isset($_SESSION['user_id']) || $_SESSION['role_id'] != 1) {
-            header("Location: index.php?action=login");
-            exit();
-        }
-        include '../app/Views/admindashboard.php';
-        break;
-    default:
-        $authController->showLoginForm();
-        break;
-         
         
+    // Espace utilisateur
+    case 'userDashboard':
+        $userController->userDashboard();
+        break;
+        
+    case 'editProfile':
+        $userController->editProfile();
+        break;
+        
+    case 'updateProfile':
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $userController->updateProfile();
+        } else {
+            header("Location: index.php?action=userDashboard");
+            exit();
+        }
+        break;
+        
+    // Espace admin
+    case 'adminDashboard':
+        $userController->adminDashboard();
+        break;
+        
+    case 'editUser':
+        $userId = $_GET['id'] ?? 0;
+        $userController->editUser($userId);
+        break;
+        
+    case 'updateUser':
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $userId = $_POST['id'] ?? 0;
+            $userController->updateUser($userId);
+        } else {
+            header("Location: index.php?action=adminDashboard");
+            exit();
+        }
+        break;
+        
+    case 'deleteUser':
+        $userId = $_GET['id'] ?? 0;
+        $userController->deleteUser($userId);
+        break;
+        
+    // Par défaut   redirection
+    default:
+        header("Location: index.php?action=home");
+        exit();
 }
 ?>

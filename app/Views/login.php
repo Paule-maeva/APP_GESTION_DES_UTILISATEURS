@@ -26,7 +26,7 @@
 <div class="grid grid-cols-1 md:grid-cols-2 bg-white shadow-lg rounded-lg max-w-3xl w-full">
     <!-- Bloc Gauche : Image -->
     <div class="hidden md:block">
-        <img class="w-full h-full object-cover rounded-l-lg" src="../../public/assets/img/6333204.jpg" alt="Illustration">
+    <img class="w-full h-full object-cover rounded-l-lg" src="/App_Gestion_des_Utilisateurs/public/assets/img/6333204.jpg" alt="illustration">
     </div>
 
     <!-- Bloc Droite : Formulaire -->
@@ -51,7 +51,7 @@
             <?php endif; ?>
             
             <!-- Formulaire de connexion -->
-            <form class="space-y-6" action=" ../public/index.php?action=login_process" method="POST">
+            <form class="space-y-6" action="index.php?action=login_process" method="POST">
                 <div>
                     <label for="email" class="block text-sm font-medium text-gray-900">Adresse email</label>
                     <input type="email" name="email" id="email" required class="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:ring-indigo-600 focus:border-indigo-600">
@@ -79,7 +79,8 @@
 
             <p class="mt-6 text-center text-sm text-gray-600">
                 Vous n'avez pas encore de compte ? 
-                <a href="/APP_GESTION_DES_UTILISATEURS/public/index.php?action=register" class="text-indigo-600 hover:text-indigo-500 font-semibold">S'inscrire</a>
+                <a href="index.php?action=register" class="text-indigo-600 hover:text-indigo-500 font-semibold">S'inscrire</a>
+
             </p>
         </div>
     </div>
