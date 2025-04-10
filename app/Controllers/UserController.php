@@ -52,26 +52,36 @@ class UserController {
      */
     public function userDashboard() {
         $this->checkAuthentication();
-
+    
         // Rediriger les admins vers le dashboard admin
         if ($_SESSION['role_id'] == 1) {
             $this->redirect("adminDashboard");
         }
-
+    
         try {
             $user = $this->userModel->getById($_SESSION['user_id']);
             if (!$user) {
                 throw new Exception("Utilisateur non trouvé");
             }
-
+    
             $loginHistory = $this->sessionModel->getByUserId($_SESSION['user_id'], 10);
+            
+            // Transmettre explicitement les variables à la vue
+            $data = [
+                'user' => $user,
+                'loginHistory' => $loginHistory,
+                'userData' => $user, // Pour compatibilité avec votre vue actuelle
+                'sessionsHistory' => $loginHistory // Pour compatibilité avec votre vue actuelle
+            ];
+            
+            // Extraire les variables pour qu'elles soient accessibles directement
+            extract($data);
             
             require_once __DIR__ . '/../Views/userdashboard.php';
         } catch (Exception $e) {
             $this->redirect("login", $e->getMessage(), "error");
         }
     }
-
     /**Afficher le formulaire d'édition de profil
      */
     public function editProfile() {
@@ -83,7 +93,7 @@ class UserController {
                 throw new Exception("Utilisateur non trouvé");
             }
             
-            require_once __DIR__ . '/../Views/user/editprofile.php';
+            require_once __DIR__ . '/../Views/editprofile.php';
         } catch (Exception $e) {
             $this->redirect("userDashboard", $e->getMessage(), "error");
         }
@@ -228,7 +238,7 @@ class UserController {
             }
 
             $roles = $this->roleModel->getAll();
-            require_once __DIR__ . '/../Views/admin/edit_user.php';
+            require_once __DIR__ . '/../Views/editprofile.php';
         } catch (Exception $e) {
             $this->redirect("adminDashboard", $e->getMessage(), "error");
         }

@@ -106,6 +106,14 @@ switch ($action) {
         $userId = $_GET['id'] ?? 0;
         $userController->deleteUser($userId);
         break;
+        // Ajout utilisateur
+$router->map('GET', '/addUser', function() use ($userController) {
+    $userController->addUserForm();
+}, 'addUserForm');
+
+$router->map('POST', '/adduser', function() use ($userController) {
+    $userController->addUser();
+}, 'adduser');
         
     // Par défaut   redirection
     default:

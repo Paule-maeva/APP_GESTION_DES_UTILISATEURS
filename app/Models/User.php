@@ -38,7 +38,7 @@ class User {
             }
         }
         
-        return "not_found";
+        return "email ieistant";
     }
 
     public function emailExists($email) {
@@ -180,5 +180,77 @@ class User {
         return $stmt->execute();
     }
 
+    /**
+ * Afficher le formulaire d'ajout d'utilisateur
+ */
+public function addUserForm() {
+    $this->checkAdminAccess();
+    
+    try {
+        $roles = $this->roleModel->getAll();
+        require_once __DIR__ . '/../Views/admin/add_user.php';
+    } catch (Exception $e) {
+        $this->redirect("adminDashboard", $e->getMessage(), "error");
+    }
+}
+
+/**
+ * Traiter l'ajout d'un nouvel utilisateur
+ */
+public function addUser() {
+    $this->checkAdminAccess();
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        $this->redirect("adminDashboard", "Méthode non autorisée", "error");
+    }
+
+    try {
+        $username = trim(htmlspecialchars($_POST['username'] ?? ''));
+        $email = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
+        $password = $_POST['password'] ?? '';
+        $confirm_password = $_POST['confirm_password'] ?? '';
+        $role_id = intval($_POST['role_id'] ?? 2);
+        $status = in_array($_POST['status'] ?? 'active', ['active', 'inactive']) ? $_POST['status'] : 'active';
+
+        // Validation
+        if (empty($username) || empty($email) || empty($password)) {
+            throw new Exception("Tous les champs obligatoires doivent être remplis");
+        }
+
+        if (!$email) {
+            throw new Exception("Adresse email invalide");
+        }
+
+        if ($password !== $confirm_password) {
+            throw new Exception("Les mots de passe ne correspondent pas");
+        }
+
+        if (strlen($password) < 8 || !preg_match('/[A-Z]/', $password) || !preg_match('/[0-9]/', $password)) {
+            throw new Exception("Le mot de passe doit contenir 8 caractères dont une majuscule et un chiffre");
+        }
+
+        // Vérifier si l'email existe déjà
+        if ($this->userModel->getByEmail($email)) {
+            throw new Exception("Cet email est déjà utilisé");
+        }
+
+        // Créer l'utilisateur
+        $data = [
+            'username' => $username,
+            'email' => $email,
+            'password' => $password,
+            'role_id' => $role_id,
+            'status' => $status
+        ];
+
+        if ($this->userModel->create($data)) {
+            $this->redirect("adminDashboard", "Utilisateur créé avec succès");
+        } else {
+            throw new Exception("Échec de la création de l'utilisateur");
+        }
+    } catch (Exception $e) {
+        $this->redirect("addUserForm", $e->getMessage(), "error");
+    }
+}
 }
 ?>

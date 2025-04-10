@@ -17,8 +17,8 @@
             <div class="cta-buttons">
                 <!-- Remplacez les liens actuels par : -->
 <!-- Remplacez par ces liens absolus depuis la racine -->
-<a href="   ./public/index.php?action=login" class="lien-style">Se connecter</a>
-<a href="  ./public/index.php?action=register" class="lien-style">S'inscrire</a>
+<a href="   public/index.php?action=login" class="lien-style">Se connecter</a>
+<a href="  public/index.php?action=register" class="lien-style">S'inscrire</a>
             </div>
             
             <div class="features">
